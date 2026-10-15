@@ -14,7 +14,7 @@
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
     "jsonwebtoken": "^9.0.2",
-    "nodemailer": "^9.1.1",
+    "nodemailer": "^9.0.6",
     "pg": "^8.13.1"
   },
   "devDependencies": {
@@ -23,3 +23,4 @@
     "vitest": "^3.2.7"
   }
 }
+

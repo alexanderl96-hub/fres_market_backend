@@ -1,18 +1,17 @@
-
 import nodemailer from 'nodemailer';
-
-const {
-  SMTP_HOST,
-  SMTP_PORT,
-  SMTP_SECURE,
-  SMTP_USER,
-  SMTP_PASS,
-  MAIL_FROM,
-} = process.env;
 
 let transporter;
 
 function getTransporter() {
+  const {
+    SMTP_HOST,
+    SMTP_PORT,
+    SMTP_SECURE,
+    SMTP_USER,
+    SMTP_PASS,
+    MAIL_FROM,
+  } = process.env;
+
   if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !MAIL_FROM) {
     throw new Error('Email service is not configured.');
   }
@@ -29,11 +28,13 @@ function getTransporter() {
     });
   }
 
-  return transporter;
+  return { transporter, MAIL_FROM };
 }
 
 export async function sendEmail({ to, subject, text, html }) {
-  return getTransporter().sendMail({
+  const { transporter, MAIL_FROM } = getTransporter();
+
+  return transporter.sendMail({
     from: MAIL_FROM,
     to,
     subject,
@@ -41,3 +42,4 @@ export async function sendEmail({ to, subject, text, html }) {
     html,
   });
 }
+
