@@ -6,6 +6,7 @@ import { pool } from '../config/db.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import crypto from 'node:crypto';
 import { sendEmail } from '../config/mailer.js';
+// import { use } from 'react';
 
 const router = Router();
 const authLimiter = rateLimit({
@@ -18,14 +19,14 @@ const authLimiter = rateLimit({
 
 function makeToken(user) {
   return jwt.sign(
-    { sub: String(user.id), email: user.email, name: user.name },
+    { sub: String(user.id), email: user.email, name: user.name, created_at: user.created_at },
     process.env.JWT_SECRET,
     { expiresIn: '2h' }
   );
 }
 
 function publicUser(user) {
-  return { id: user.id, name: user.name, email: user.email };
+  return { id: user.id, name: user.name, email: user.email, created_at: user.created_at};
 }
 
 router.post('/register', authLimiter, async (req, res, next) => {
@@ -70,7 +71,7 @@ router.post('/login', authLimiter, async (req, res, next) => {
     }
 
     const result = await pool.query(
-      'SELECT id, name, email, password_hash FROM users WHERE email = $1',
+      'SELECT id, name, email, password_hash, created_at FROM users WHERE email = $1',
       [email]
     );
     const user = result.rows[0];
@@ -88,7 +89,7 @@ router.post('/login', authLimiter, async (req, res, next) => {
 router.get('/me', requireAuth, async (req, res, next) => {
   try {
     const result = await pool.query(
-      'SELECT id, name, email FROM users WHERE id = $1',
+      'SELECT id, name, email, created_at FROM users WHERE id = $1',
       [req.user.sub]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Account not found.' });
@@ -228,6 +229,68 @@ router.post('/reset-password', authLimiter, async (req, res, next) => {
   }
 });
 
+router.post('/recover-account-email', authLimiter, async (req, res, next) => {
+    const genericMessage =
+      'If an account matches that verified recovery email, an email will be sent shortly.';
+
+    try {
+      const recoveryEmail =
+        typeof req.body?.recoveryEmail === 'string'
+          ? req.body.recoveryEmail.trim().toLowerCase()
+          : '';
+
+      if (
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recoveryEmail) ||
+        recoveryEmail.length > 255
+      ) {
+        return res.status(400).json({
+          error: 'Enter a valid recovery email address.',
+        });
+      }
+
+      const result = await pool.query(
+        `SELECT email
+         FROM users
+         WHERE LOWER(recovery_email) = $1
+           AND recovery_email_verified_at IS NOT NULL
+         LIMIT 1`,
+        [recoveryEmail]
+      );
+
+      // Always return the same response when no verified match exists.
+      if (result.rows.length === 0) {
+        return res.status(200).json({ message: genericMessage });
+      }
+
+      const accountEmail = result.rows[0].email;
+
+      // Send the account email only to its verified recovery address.
+      try {
+        await sendEmail({
+          to: recoveryEmail,
+          subject: 'Your Food Store account email',
+          text: `You requested to recover your Food Store account email.\n\nYour account email is: ${accountEmail}\n\nIf you did not make this request, you can ignore this message.`,
+          html: `
+            <p>You requested to recover your Food Store account email.</p>
+            <p>Your account email is: <strong>${accountEmail}</strong></p>
+            <p>If you did not make this request, you can ignore this message.</p>
+          `,
+        });
+      } catch (emailError) {
+        // Do not reveal account existence through the API response.
+        console.error(
+          'Account email recovery message could not be sent:',
+          emailError.message
+        );
+      }
+
+      return res.status(200).json({ message: genericMessage });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 router.post('/recovery-email/request', requireAuth, async (req, res, next) => {
   try {
     const recoveryEmail = typeof req.body.email === 'string'
@@ -305,7 +368,6 @@ router.post('/recovery-email/request', requireAuth, async (req, res, next) => {
   }
 });
 
-
 router.post('/recovery-email/verify', async (req, res, next) => {
   const client = await pool.connect();
 
@@ -364,17 +426,6 @@ router.post('/recovery-email/verify', async (req, res, next) => {
     client.release();
   }
 });
-
-
-// function publicUser(user) {
-//   return {
-//     id: user.id,
-//     name: user.name,
-//     email: user.email,
-//     createdAt: user.created_at,
-//   };
-// }
-
 
 router.post('/change-password', requireAuth, async (req, res, next) => {
   try {
